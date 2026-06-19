@@ -283,38 +283,39 @@ class ANNPredictor:
                 a = self._sigmoid(z)
         return a.squeeze()
 
-    def _train_numpy(self, X: np.ndarray, y: np.ndarray):
-        """Mini-batch SGD with binary cross-entropy."""
-        lr = 0.01
-        batch_size = 64
-        n = len(X)
-        self._init_numpy_weights(X.shape[1])
-        for epoch in range(self.epochs):
-            idx = np.random.permutation(n)
-            for start in range(0, n, batch_size):
-                batch = idx[start:start+batch_size]
-                Xb, yb = X[batch], y[batch].astype(np.float32)
-                # Forward
-                activations = [Xb]
-                a = Xb
-                for i, (w, b) in enumerate(zip(self._w, self._b)):
-                    z = a @ w + b
-                    if i < len(self._w) - 1:
-                        a = self._relu(z)
-                    else:
-                        a = self._sigmoid(z)
-                    activations.append(a)
-                pred = activations[-1].squeeze()
-                # Backward (output layer)
-                delta = (pred - yb) / len(batch)
-                for i in reversed(range(len(self._w))):
-                    dw = activations[i].T @ delta.reshape(-1, 1)
-                    db = delta.sum(axis=0)
-                    self._w[i] -= lr * dw
-                    self._b[i] -= lr * db
-                    if i > 0:
-                        delta = (delta.reshape(-1, 1) @ self._w[i].T).squeeze()
-                        delta *= (activations[i] > 0).astype(float)
+   def _train_numpy(self, X: np.ndarray, y: np.ndarray):
+    """Simple SGD - fixed version."""
+    lr = 0.01
+    self._init_numpy_weights(X.shape[1])
+    n = len(X)
+    for epoch in range(self.epochs):
+        idx = np.random.permutation(n)
+        for start in range(0, n, 64):
+            batch = idx[start:start+64]
+            Xb = X[batch]
+            yb = y[batch].astype(np.float32).reshape(-1, 1)
+            
+            # Forward pass
+            a = Xb
+            caches = [a]
+            for i, (w, b) in enumerate(zip(self._w, self._b)):
+                z = a @ w + b
+                if i < len(self._w) - 1:
+                    a = np.maximum(0, z)  # ReLU
+                else:
+                    a = 1 / (1 + np.exp(-np.clip(z, -500, 500)))  # Sigmoid
+                caches.append(a)
+            
+            # Backward pass
+            delta = (caches[-1] - yb) / len(batch)
+            for i in reversed(range(len(self._w))):
+                dw = caches[i].T @ delta
+                db = delta.sum(axis=0)
+                self._w[i] -= lr * dw
+                self._b[i] -= lr * db
+                if i > 0:
+                    delta = delta @ self._w[i].T
+                    delta *= (caches[i] > 0).astype(float)
 
     # --- Public interface ---
     def train(self, X: np.ndarray, y: np.ndarray):
